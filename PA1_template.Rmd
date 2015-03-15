@@ -5,21 +5,185 @@ output:
     keep_md: true
 ---
 
+```{r setoptions, echo=FALSE, results="hide", warning=FALSE}
+library(knitr)
+opts_chunk$set(echo=TRUE,results="hide",tidy=TRUE,fig.path="figures/")
+```
+
+***
 
 ## Loading and preprocessing the data
+### 1. Load the data
+#### - reads csv into dataframe "df"
+```{r loaddata}
+# assume original data source is in same folder
+df <- read.csv("./activity.csv") 
+```
 
+### 2. Process/transform the data
+#### - adds a datetime variable by concatenating date and interval
+```{r processdata}
+# creates datetime field
+interval_char <- formatC(df$interval,width=4,format="d",flag="0")
+datetime_char <- paste(df$date,interval_char)
+df$datetime <- strptime(datetime_char,format="%Y-%m-%d %H%M")
+```
+#### - resulting dataframe "df"
+```{r printprocesseddata,results="markup"}
+str(df)
+```
 
+***
+***
 
 ## What is mean total number of steps taken per day?
+### 1. Make a histogram of the total number of steps taken each day
+#### - aggregates total no. of steps per day
+```{r aggregatestepsbyday}
+# uses the plyr package
+library(plyr)
+# aggregate the total number of steps per day (while removing NA values)
+steps_per_day <- ddply(df,.(date),summarise,total.steps.per.day=sum(steps,na.rm=TRUE))
+```
+#### - make a histogram
+```{r makehistogramofstepsbyday,results='markup'}
+# histogram
+plot(steps_per_day$date,steps_per_day$total.steps.per.day,type="n",
+     main="Histogram of Total Steps per day", xlab="Date", ylab="Total Steps per day")
+lines(steps_per_day$date,steps_per_day$total.steps.per.day,type="h",col="red",lwd="3")
+```
 
+### 2. Calculate and report the mean and median total number of steps taken per day
+#### - compute mean and median steps per day
+```{r computemeanmedianstepsperday,results='markup'}
+# aggregate mean/median of total steps per day (while removing NA values)
+mean_total_steps_per_day <- mean(steps_per_day$total.steps.per.day, na.rm=TRUE)
+median_total_steps_per_day <- median(steps_per_day$total.steps.per.day, na.rm=TRUE)
+```
+#### - mean steps per day is `r mean_total_steps_per_day`, while median steps per day is `r median_total_steps_per_day`
 
+***
+***
 
 ## What is the average daily activity pattern?
+### 1. Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+#### - aggregate mean number of steps across all days by each interval (while removing NA values)
+```{r aggregatemeanstepsbyinterval}
+# aggregate by mean steps
+mean_steps_per_interval <- ddply(df,.(interval),summarise,mean.steps=mean(steps, na.rm=TRUE))
+```
+#### - plot time series
+```{r plotmeanstepsbyinterval}
+# plot time series of mean steps by interval
+plot(mean_steps_per_interval$interval,mean_steps_per_interval$mean.steps,type="l",
+     main="Mean steps per interval", xlab="Interval", ylab="Mean Steps")
+```
 
+### 2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+#### - find interval with maximum averaged steps
+```{r findmaxsteps}
+max_steps <- max(mean_steps_per_interval$mean.steps)
+interval_max <- mean_steps_per_interval[which.max(mean_steps_per_interval$mean.steps),1]
+```
+#### - interval at `r interval_max` contains the maximum number of steps (`r max_steps` steps)
+```{r plotmaxstepsbyinterval}
+# plot point of max steps in same histogram
+plot(mean_steps_per_interval$interval,mean_steps_per_interval$mean.steps,type="l",
+     main="Mean steps per interval", xlab="Interval", ylab="Mean Steps")
+abline(h=max_steps,col="green",lty=3)
+abline(v=interval_max,col="green",lty=3)
+```
 
+***
+***
 
 ## Imputing missing values
+### 1. Calculate and report the total number of missing values in the dataset
+#### - count number of NA in each column (steps, date, interval)
+```{r reporttotalmissing}
+number_steps_na <- length(df[is.na(df$steps),1])
+number_date_na <- length(df[is.na(df$date),2])
+number_interval_na <- length(df[is.na(df$interval),3])
+```
+#### - there are `r number_steps_na` NA values in "steps" column, while `r number_date_na` NA values in "date" column and `r number_interval_na` NA values in "interval" column
 
+### 2. Strategy to fill in missing values
+#### - use mean steps in each interval to impute missing
+```{r imputemean}
+# merge mean steps per interval
+df_new <- merge(df,mean_steps_per_interval,by="interval",all.x=TRUE,sort=FALSE)
+# if NA then use mean steps
+df_new$new.steps <- ifelse(is.na(df_new$steps),df_new$mean.steps,df_new$steps)
+# sort by datetime
+df_new <- df_new[order(df_new$datetime),]
+```
 
+### 3. Create new dataset with missing data filled in
+#### - use imputed steps column to create new dataset
+```{r createimputeddata}
+df_imputed <- df_new[,c("date","interval","datetime","new.steps")]
+rownames(df_imputed) <- seq(length=nrow(df_imputed))
+```
+
+### 4. Make a histogram of the total number of steps taken per day (again)
+#### - aggregates total no. of steps per day (again)
+```{r aggregatestepsbydayagain}
+# aggregate the total number of steps per day (with imputed values)
+steps_per_day_imputed <- ddply(df_imputed,.(date),summarise,total.steps.per.day.imputed=sum(new.steps,na.rm=TRUE))
+```
+#### - make a histogram
+```{r makehistogramofstepsbydayimputed,results='markup'}
+# histogram
+plot(steps_per_day_imputed$date,steps_per_day_imputed$total.steps.per.day.imputed,type="n",
+     main="Histogram of Total Steps per day", xlab="Date", ylab="Total Steps per day")
+lines(steps_per_day_imputed$date,steps_per_day_imputed$total.steps.per.day.imputed,type="h",col="red",lwd="3")
+```  
+
+#### - compute mean and median, compared to before imputing
+```{r computemeanmedianstepsperdayimputed,results='markup'}
+# aggregate mean/median of total steps per day (after impute)
+mean_total_steps_per_day_imputed <- mean(steps_per_day_imputed$total.steps.per.day.imputed, na.rm=TRUE)
+median_total_steps_per_day_imputed <- median(steps_per_day_imputed$total.steps.per.day.imputed, na.rm=TRUE)
+diff_mean <- mean_total_steps_per_day_imputed - mean_total_steps_per_day
+diff_median <- median_total_steps_per_day_imputed - median_total_steps_per_day
+```
+#### - mean steps per day (after impute) is `r mean_total_steps_per_day_imputed`, while median steps per day is `r median_total_steps_per_day_imputed`
+#### - compared to mean steps per day (before impute) is `r mean_total_steps_per_day`, while median steps per day is `r median_total_steps_per_day`
+#### - mean steps per day increased by `r diff_mean`, while median steps per day increased by `r diff_median`
+
+***
+***
 
 ## Are there differences in activity patterns between weekdays and weekends?
+### 1. Create "type.of.day"" variable to indicate "weekday" or "weekend"
+#### - create "type.of.day" variable
+``` {r createtypeofday}
+df_imputed$day <- weekdays(as.Date(df_imputed$date))
+weekend <- c("Saturday","Sunday")
+df_imputed$type.of.day <- ifelse(df_imputed$day %in% weekend,"weekend","weekday")
+df_imputed$type.of.day <- as.factor(df_imputed$type.of.day)
+```
+#### - results has variable "type.of.day"
+``` {r printresults,results='markup'}
+# see sample of results
+head(df_imputed[df_imputed$type.of.day=="weekday",],5)
+head(df_imputed[df_imputed$type.of.day=="weekend",],5)
+```
+
+
+### 2. Time series plot of 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+#### - aggregate mean number of steps across all days by each interval by weekday/weekend
+```{r aggregatemeanstepsbyintervaltypeofday}
+# aggregate mean steps by interval by type of days,
+mean_steps_per_interval_typeofday <- ddply(df_imputed,.(interval,type.of.day),summarise,mean.steps=mean(new.steps, na.rm=TRUE))
+```
+#### - panel plot time series
+```{r plotmeanstepsbyintervaltypeofday}
+# use lattice library to plot
+library(lattice)
+# plot time series of mean steps by interval, conditioned on type of days
+xyplot(mean.steps ~ interval | type.of.day, mean_steps_per_interval_typeofday, layout=(c(1,2)), main="Times series of mean steps by interval", xlab="Interval", ylab="Mean Steps", type="l")
+
+```
+
+***
